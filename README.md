@@ -14,6 +14,7 @@ does math, searches the web, and answers instantly.
 | `4_ai_chatbot_tools.py` | Memory **+ a calculator tool** for exact math | Yes |
 | `5_ai_chatbot_web.py` | Memory **+ web search** for real, current answers | Yes |
 | `6_ai_chatbot_streaming.py` | Memory **+ instant, word-by-word** answers (streaming) | Yes |
+| `7_ai_chatbot_full.py` | **Everything combined**: memory + calculator + web + streaming | Yes |
 
 Work through them in order — each one builds on the idea before it.
 
@@ -78,9 +79,14 @@ result in its answer.
 Instead of waiting for the whole reply, streaming prints it word-by-word as
 it's generated, so answers feel instant.
 
+### Everything together (step 7)
+
+`7_ai_chatbot_full.py` combines all of the above into one bot. The interesting
+part is the loop: with streaming *and* tools, a single question can take a few
+rounds — stream a reply, run a tool if Claude asks, stream the continuation,
+and repeat until there's a final answer.
+
 ## Where to go next
 
-- Combine everything: one bot with memory, the calculator, web search, **and**
-  streaming.
 - Give your bot a stronger **personality** with a detailed system prompt.
 - Add more tools — the weather, a to-do list, your own data.
