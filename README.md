@@ -15,8 +15,11 @@ does math, searches the web, and answers instantly.
 | `5_ai_chatbot_web.py` | Memory **+ web search** for real, current answers | Yes |
 | `6_ai_chatbot_streaming.py` | Memory **+ instant, word-by-word** answers (streaming) | Yes |
 | `7_ai_chatbot_full.py` | **Everything combined**: memory + calculator + web + streaming | Yes |
+| `streamlit_app.py` | A **web app** version — a real chat page in your browser | Yes |
 
-Work through them in order — each one builds on the idea before it.
+Work through the numbered files in order — each one builds on the idea before
+it. `streamlit_app.py` is a bonus: the chatbot as a web page instead of the
+terminal.
 
 ## How to run
 
@@ -54,6 +57,14 @@ python 3_ai_chatbot_memory.py     # remembers what you say
 python 7_ai_chatbot_full.py       # the full one: memory + math + web + streaming
 ```
 Type your message, press Enter, and type `bye` to quit.
+
+### 5. Or run the web app
+For a real chat page in your browser instead of the terminal, use `streamlit`
+(note: `streamlit run`, **not** `python`):
+```
+streamlit run streamlit_app.py
+```
+It opens automatically at http://localhost:8501.
 
 ### Common hiccups
 - **`python: command not found`** → use `python3` instead.
