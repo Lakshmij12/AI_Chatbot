@@ -18,6 +18,50 @@ does math, searches the web, and answers instantly.
 
 Work through them in order — each one builds on the idea before it.
 
+## How to run
+
+### 1. Get the code
+```
+git clone https://github.com/Lakshmij12/AI_Chatbot.git
+cd AI_Chatbot
+```
+
+### 2. Run the no-setup bot first (no API key needed)
+```
+python 1_rule_based_bot.py
+```
+Type `hello`, chat with it, and type `bye` to quit. If `python` doesn't work,
+try `python3`.
+
+### 3. Set up the AI bots (steps 2–7)
+```
+pip install -r requirements.txt
+```
+Get an API key from https://console.anthropic.com, then give it to your
+terminal (never paste it into the code):
+```
+# Mac / Linux
+export ANTHROPIC_API_KEY="your-key-here"
+
+# Windows (PowerShell)
+setx ANTHROPIC_API_KEY "your-key-here"
+```
+On Windows, close and reopen the terminal after `setx` so it takes effect.
+
+### 4. Run any AI bot
+```
+python 3_ai_chatbot_memory.py     # remembers what you say
+python 7_ai_chatbot_full.py       # the full one: memory + math + web + streaming
+```
+Type your message, press Enter, and type `bye` to quit.
+
+### Common hiccups
+- **`python: command not found`** → use `python3` instead.
+- **`No module named anthropic`** → re-run `pip install -r requirements.txt`
+  (or `pip3`).
+- **`AuthenticationError` / no API key** → the key isn't set in *this* terminal
+  window. Re-run the `export` / `setx` step (reopen the terminal on Windows).
+
 ## How a chatbot works
 
 Every chatbot, simple or advanced, follows the same loop:
@@ -30,23 +74,6 @@ Every chatbot, simple or advanced, follows the same loop:
 The only thing that changes is *step 2*:
 - The **rule-based bot** decides the reply with hand-written `if`/`else` rules.
 - The **AI bot** asks Claude (a large language model) to write the reply.
-
-## Setup for the AI bots (steps 2–6)
-
-1. Install the library:
-   ```
-   pip install -r requirements.txt
-   ```
-2. Get an API key from https://console.anthropic.com
-3. Save the key as an environment variable so the code can read it safely
-   (never paste your key directly into the code):
-   ```
-   # Mac / Linux
-   export ANTHROPIC_API_KEY="your-key-here"
-
-   # Windows
-   setx ANTHROPIC_API_KEY "your-key-here"
-   ```
 
 ## The big ideas
 
