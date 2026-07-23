@@ -5,8 +5,11 @@ Everything so far ran in the terminal. Streamlit turns the same bot into a
 real chat webpage — a text box, chat bubbles, and streaming replies — with
 almost no extra code.
 
-It keeps MEMORY (using Streamlit's session_state) and STREAMS the reply so
-it appears word-by-word.
+It keeps MEMORY (using Streamlit's session_state), STREAMS the reply so it
+appears word-by-word, and lets you pick a PERSONALITY from the sidebar.
+
+The personality is just a different "system prompt" — the instruction that
+tells Claude how to behave. Swapping it changes the bot's whole character.
 
 Setup:
     pip install -r requirements.txt
@@ -25,7 +28,27 @@ MODEL = "claude-opus-4-8"
 
 client = anthropic.Anthropic()
 
+# Each personality is just a name mapped to a system prompt. Add your own!
+PERSONALITIES = {
+    "Friendly assistant": "You are a friendly, helpful assistant.",
+    "Python tutor": "You are a patient Python tutor. Explain simply and "
+    "always show a tiny code example.",
+    "Pirate": "You are a cheerful pirate. Answer helpfully but talk like a "
+    "pirate, with 'arr' and nautical slang.",
+    "Concise expert": "You are a terse expert. Answer in as few words as "
+    "possible, no filler.",
+}
+
 st.title("💬 My AI Chatbot")
+
+# --- Sidebar controls ---------------------------------------------------
+with st.sidebar:
+    persona_name = st.selectbox("Personality", list(PERSONALITIES.keys()))
+    if st.button("New chat"):
+        st.session_state.history = []
+        st.rerun()
+
+system_prompt = PERSONALITIES[persona_name]
 
 # session_state is Streamlit's memory — it survives across button clicks and
 # messages. We store the conversation history here.
@@ -54,7 +77,7 @@ if prompt:
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=1024,
-                system="You are a friendly, helpful assistant.",
+                system=system_prompt,  # the chosen personality
                 messages=st.session_state.history,
             ) as stream:
                 for text in stream.text_stream:
@@ -66,9 +89,3 @@ if prompt:
 
     # 3. Remember the bot's reply for the next turn.
     st.session_state.history.append({"role": "assistant", "content": reply})
-
-# A button in the sidebar to start a fresh conversation.
-with st.sidebar:
-    if st.button("New chat"):
-        st.session_state.history = []
-        st.rerun()

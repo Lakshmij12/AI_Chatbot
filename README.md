@@ -16,6 +16,7 @@ does math, searches the web, and answers instantly.
 | `6_ai_chatbot_streaming.py` | Memory **+ instant, word-by-word** answers (streaming) | Yes |
 | `7_ai_chatbot_full.py` | **Everything combined**: memory + calculator + web + streaming | Yes |
 | `streamlit_app.py` | A **web app** version — a real chat page in your browser | Yes |
+| `whatsapp_bot.py` | A **WhatsApp** version — chat with the bot from WhatsApp (see [WHATSAPP.md](WHATSAPP.md)) | Yes |
 
 Work through the numbered files in order — each one builds on the idea before
 it. `streamlit_app.py` is a bonus: the chatbot as a web page instead of the
