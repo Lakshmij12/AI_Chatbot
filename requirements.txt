@@ -3,3 +3,4 @@ streamlit
 flask
 twilio
 pypdf
+streamlit-mic-recorder

@@ -2,22 +2,18 @@
 An advanced, private, friendly web chatbot using Streamlit
 
 Feels like Claude / ChatGPT, built on Claude:
-  - MULTIPLE conversations — start new chats, switch between them, delete them
-    (each keeps its own memory; they're auto-named from your first message)
-  - A MODEL picker — fast & cheap (Haiku) or smartest (Opus)
-  - REGENERATE the last reply, or one-tap "Try again" if something errors
+  - MULTIPLE conversations — new / switch / delete (auto-named, own memory)
+  - MODEL picker — fast & cheap (Haiku) or smartest (Opus)
+  - IMAGE upload (vision) — send a picture and ask about it
+  - VOICE input — speak instead of typing (if the mic component is installed)
+  - FEEDBACK buttons (👍/👎) under each reply
+  - REGENERATE the last reply, or one-tap "Try again" on errors
   - Word-by-word STREAMING replies with chat avatars
-  - A personality picker (including a custom one you write yourself)
-  - Reply-length control and download-your-chat
+  - Personality picker (including a custom one), reply-length control
   - "Chat with your document" — upload a .txt/.pdf and ask about it
+  - Download-your-chat, warm theme + logo
   - Privacy-conscious: key from a secure store, session-only data, clear notice
   - Friendly error handling so it never shows a scary crash
-
-Privacy in plain words:
-  - Your messages go to Anthropic's API to generate replies. This app itself
-    saves nothing to disk or any server — everything lives in memory for the
-    current session and is gone on refresh.
-  - Your API key is read from Streamlit secrets or an environment variable.
 
 Setup:
     pip install -r requirements.txt
@@ -27,6 +23,7 @@ Run it (note: 'streamlit run', NOT 'python'):
     streamlit run streamlit_app.py
 """
 
+import base64
 import os
 import uuid
 
@@ -34,15 +31,25 @@ import anthropic
 import streamlit as st
 from pypdf import PdfReader
 
+# Optional voice input (browser speech-to-text). App still works without it.
+try:
+    from streamlit_mic_recorder import speech_to_text
+    HAS_VOICE = True
+except Exception:
+    HAS_VOICE = False
+
 # Avatars shown next to each chat bubble.
 USER_AVATAR = "🧑"
 BOT_AVATAR = "🤖"
 
-# Model choices: friendly label -> model id.
+# Model choices: friendly label -> model id. Both support images (vision).
 MODELS = {
     "⚡ Fast & cheap (Haiku)": "claude-haiku-4-5",
     "🧠 Smartest (Opus)": "claude-opus-4-8",
 }
+
+# Image types Claude can read.
+IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp"]
 
 # Our logo, drawn as an SVG so it always looks crisp. (Also in assets/logo.svg.)
 LOGO_SVG = """
@@ -93,10 +100,7 @@ def get_secret(name):
 
 
 def get_api_key():
-    """Read the API key from Streamlit secrets first, then an env var.
-
-    Keeping the key out of the code is the core privacy/security practice.
-    """
+    """Read the API key from Streamlit secrets first, then an env var."""
     return get_secret("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
 
@@ -111,11 +115,7 @@ def read_document(uploaded_file):
 
 
 def require_password():
-    """Optional gate: if APP_PASSWORD is set, ask for it before using the app.
-
-    This protects a PUBLIC deployment so strangers can't spend your API credits.
-    If no APP_PASSWORD is configured, the app stays open (handy for local use).
-    """
+    """Optional gate: if APP_PASSWORD is set, ask for it before using the app."""
     expected = get_secret("APP_PASSWORD")
     if not expected:
         return
@@ -131,7 +131,6 @@ def require_password():
     st.stop()
 
 
-# --- Conversation helpers (multiple chats, like Claude/ChatGPT) ----------
 def new_chat():
     """Create a fresh conversation and make it the current one."""
     chat_id = str(uuid.uuid4())
@@ -143,6 +142,31 @@ def new_chat():
 def current_history():
     """The message list for the active conversation."""
     return st.session_state.chats[st.session_state.current_chat]["history"]
+
+
+def message_text(content):
+    """Get the plain text of a message whose content may include an image."""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content:
+        if block["type"] == "text":
+            parts.append(block["text"])
+        elif block["type"] == "image":
+            parts.append("[image]")
+    return " ".join(parts)
+
+
+def render_content(content):
+    """Render a message that may be plain text or include an image."""
+    if isinstance(content, str):
+        st.markdown(content)
+        return
+    for block in content:
+        if block["type"] == "text":
+            st.markdown(block["text"])
+        elif block["type"] == "image":
+            st.image(base64.b64decode(block["source"]["data"]))
 
 
 # --- Page setup ---------------------------------------------------------
@@ -158,7 +182,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Header: logo + title, centered.
 st.markdown(f"<div style='text-align:center'>{LOGO_SVG}</div>", unsafe_allow_html=True)
 st.markdown(
     "<h1 style='text-align:center; margin-top:0'>My AI Chatbot</h1>",
@@ -170,10 +193,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Optional password gate (protects a public deployment) --------------
 require_password()
 
-# --- API key check (fail kindly if it's missing) ------------------------
 api_key = get_api_key()
 if not api_key:
     st.error(
@@ -183,7 +204,7 @@ if not api_key:
     st.stop()
 client = anthropic.Anthropic(api_key=api_key)
 
-# --- Make sure there's always at least one conversation -----------------
+# --- State: conversations, feedback, image uploader key -----------------
 if "chats" not in st.session_state:
     st.session_state.chats = {}
 if (
@@ -191,25 +212,26 @@ if (
     or st.session_state.current_chat not in st.session_state.chats
 ):
     new_chat()
+if "feedback" not in st.session_state:
+    st.session_state.feedback = {}
+if "img_key" not in st.session_state:
+    st.session_state.img_key = 0
 
-# --- Sidebar controls ---------------------------------------------------
+# --- Sidebar ------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"<div style='text-align:center'>{LOGO_SVG}</div>", unsafe_allow_html=True)
 
-    # --- Conversations list (new / switch / delete) --------------------
+    # Conversations list (new / switch / delete).
     st.header("💬 Conversations")
     if st.button("➕ New chat", use_container_width=True):
         new_chat()
         st.rerun()
-
     for chat_id, chat in list(st.session_state.chats.items()):
         is_active = chat_id == st.session_state.current_chat
         label = ("🟢 " if is_active else "💬 ") + (chat["title"] or "New chat")
         if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
             st.session_state.current_chat = chat_id
             st.rerun()
-
-    # Delete the active conversation.
     if st.button("🗑️ Delete this chat", use_container_width=True):
         del st.session_state.chats[st.session_state.current_chat]
         if st.session_state.chats:
@@ -221,14 +243,12 @@ with st.sidebar:
     st.divider()
     st.header("⚙️ Settings")
 
-    # Model picker.
     model_label = st.selectbox(
         "Model", list(MODELS.keys()),
         help="Haiku is fast and very cheap. Opus is the smartest but costs more.",
     )
     model = MODELS[model_label]
 
-    # Personality picker (with a custom option).
     persona_name = st.selectbox(
         "Choose a personality", list(PERSONALITIES.keys()) + [CUSTOM_OPTION]
     )
@@ -246,7 +266,34 @@ with st.sidebar:
 
     st.divider()
 
-    # --- Chat with your document ---------------------------------------
+    # Image upload (vision).
+    st.subheader("🖼️ Add an image")
+    image_file = st.file_uploader(
+        "Attach a picture, then type a question about it",
+        type=IMAGE_TYPES,
+        key=f"img_{st.session_state.img_key}",
+    )
+    if image_file is not None:
+        st.image(image_file, caption="Ready — ask a question below.")
+
+    st.divider()
+
+    # Voice input (optional).
+    voice_text = None
+    if HAS_VOICE:
+        st.subheader("🎙️ Voice")
+        try:
+            voice_text = speech_to_text(
+                language="en", start_prompt="🎙️ Speak", stop_prompt="⏹️ Stop",
+                key="stt",
+            )
+        except Exception:
+            voice_text = None
+        st.caption("Tap, speak, then tap stop. (Works best in Chrome.)")
+
+    st.divider()
+
+    # Document Q&A.
     st.subheader("📄 Chat with a document")
     uploaded = st.file_uploader(
         "Upload a .txt or .pdf, then ask about it", type=["txt", "pdf"]
@@ -264,28 +311,23 @@ with st.sidebar:
         st.session_state.pop("doc_text", None)
         st.session_state.pop("doc_name", None)
 
-    # Download the current conversation as a text file.
+    # Download the current conversation.
     if current_history():
         transcript = "\n\n".join(
-            f"{'You' if m['role'] == 'user' else 'Bot'}: {m['content']}"
+            f"{'You' if m['role'] == 'user' else 'Bot'}: {message_text(m['content'])}"
             for m in current_history()
         )
         st.download_button("⬇️ Download chat", transcript, file_name="my_chat.txt")
 
     st.divider()
-
-    # --- Privacy notice ------------------------------------------------
     with st.expander("🔒 Privacy"):
         st.markdown(
-            "- Your messages are sent to **Anthropic's API** to generate "
-            "replies — that's how the AI works.\n"
-            "- This app does **not** save your chats or documents to any file "
-            "or server. They stay in memory for this session only and are "
-            "erased when you refresh.\n"
-            "- Your API key is read from a secure store, never stored in the "
-            "code.\n"
-            "- Please avoid sharing passwords or other sensitive personal "
-            "information in chat."
+            "- Your messages (and any image or document) are sent to "
+            "**Anthropic's API** to generate replies — that's how the AI works.\n"
+            "- This app does **not** save your chats to any file or server. They "
+            "stay in memory for this session only and are erased on refresh.\n"
+            "- Your API key is read from a secure store, never in the code.\n"
+            "- Please avoid sharing passwords or sensitive personal information."
         )
 
 # Build the system prompt: personality + friendliness (+ document if provided).
@@ -302,11 +344,7 @@ if st.session_state.get("doc_text"):
 
 
 def generate_reply():
-    """Stream a reply for the active conversation. Returns True on success.
-
-    On any API problem we show a friendly message instead of a scary error,
-    and leave the user's message in place so they can tap "Try again".
-    """
+    """Stream a reply for the active conversation. Returns True on success."""
     history = current_history()
     try:
         with st.chat_message("assistant", avatar=BOT_AVATAR):
@@ -330,14 +368,12 @@ def generate_reply():
         st.warning("😅 Lots of requests right now. Wait a few seconds, then tap "
                    "**🔄 Try again**.")
     except anthropic.AuthenticationError:
-        st.error("🔑 There's a problem with the API key. Check it in the app "
-                 "settings.")
+        st.error("🔑 There's a problem with the API key. Check the app settings.")
     except anthropic.APIConnectionError:
         st.warning("🌐 Network hiccup. Check your connection, then tap "
                    "**🔄 Try again**.")
     except anthropic.APIStatusError:
-        st.warning("⏳ The AI service is busy. Please tap **🔄 Try again** in a "
-                   "moment.")
+        st.warning("⏳ The AI service is busy. Please tap **🔄 Try again** soon.")
     except Exception:
         st.error("😕 Something went wrong. Please tap **🔄 Try again**.")
     return False
@@ -347,9 +383,9 @@ def generate_reply():
 if st.session_state.get("doc_name"):
     st.caption(f"📄 Answering from your document: **{st.session_state['doc_name']}**")
 
-# --- Friendly welcome + example questions (only before the chat starts) --
+# Friendly welcome + example questions (only before the chat starts).
 if not current_history():
-    st.info("👋 Hi there! I'm here to help. Tap an example below, upload a "
+    st.info("👋 Hi there! I'm here to help. Tap an example, add an image or "
             "document in the sidebar, or just type a message.")
     examples = [
         "Tell me a fun fact 🎉",
@@ -361,39 +397,74 @@ if not current_history():
         if col.button(example):
             st.session_state.pending = example
 
-# --- Show the conversation so far ---------------------------------------
-for message in current_history():
+# --- Show the conversation so far (with feedback buttons) ---------------
+for index, message in enumerate(current_history()):
     avatar = USER_AVATAR if message["role"] == "user" else BOT_AVATAR
     with st.chat_message(message["role"], avatar=avatar):
-        st.markdown(message["content"])
+        render_content(message["content"])
+        # Feedback buttons under each assistant reply.
+        if message["role"] == "assistant":
+            fb_key = f"{st.session_state.current_chat}_{index}"
+            given = st.session_state.feedback.get(fb_key)
+            up, down, note = st.columns([1, 1, 8])
+            if up.button("👍", key=f"up_{fb_key}"):
+                st.session_state.feedback[fb_key] = "up"
+                st.rerun()
+            if down.button("👎", key=f"down_{fb_key}"):
+                st.session_state.feedback[fb_key] = "down"
+                st.rerun()
+            if given == "up":
+                note.caption("Thanks for the 👍")
+            elif given == "down":
+                note.caption("Thanks — I'll try to do better 🙏")
 
-# The message can come from the text box OR from an example button click.
+# Input can come from the text box, an example button, or voice.
 typed = st.chat_input("Ask me anything…")
-user_input = typed or st.session_state.pop("pending", None)
+user_text = typed or voice_text or st.session_state.pop("pending", None)
 
-if user_input:
+if user_text:
     history = current_history()
-    history.append({"role": "user", "content": user_input})
+
+    # Attach the image (if any) to this message.
+    used_image = False
+    if image_file is not None:
+        b64 = base64.standard_b64encode(image_file.getvalue()).decode("utf-8")
+        content = [
+            {"type": "image", "source": {
+                "type": "base64", "media_type": image_file.type, "data": b64}},
+            {"type": "text", "text": user_text},
+        ]
+        used_image = True
+    else:
+        content = user_text
+
+    history.append({"role": "user", "content": content})
 
     # Auto-name a brand-new conversation from the first message.
     chat = st.session_state.chats[st.session_state.current_chat]
     if chat["title"] == "New chat":
-        chat["title"] = user_input[:38] + ("…" if len(user_input) > 38 else "")
+        title = message_text(content)
+        chat["title"] = title[:38] + ("…" if len(title) > 38 else "")
 
     with st.chat_message("user", avatar=USER_AVATAR):
-        st.markdown(user_input)
-    generate_reply()
+        render_content(content)
+    ok = generate_reply()
+
+    if used_image:
+        # Reset the image uploader so it isn't re-sent on the next message.
+        st.session_state.img_key += 1
+        st.rerun()
+    elif ok:
+        st.rerun()  # redraw so feedback buttons appear under the new reply
 
 # --- Action buttons under the conversation ------------------------------
 history = current_history()
 if history and history[-1]["role"] == "assistant" and len(history) >= 2:
-    # Normal completed turn → offer to regenerate the last answer.
     if st.button("🔄 Regenerate"):
-        history.pop()  # drop the last assistant reply and make a new one
+        history.pop()
         if generate_reply():
             st.rerun()
 elif history and history[-1]["role"] == "user":
-    # Last turn didn't get an answer (e.g. an error) → offer a retry.
     if st.button("🔄 Try again"):
         if generate_reply():
             st.rerun()

@@ -69,6 +69,29 @@ streamlit run streamlit_app.py
 ```
 It opens automatically at http://localhost:8501.
 
+## The web app (`streamlit_app.py`) — features
+
+The web app is a full, ChatGPT/Claude-style chatbot:
+
+- 💬 **Multiple conversations** — start new chats, switch between them, and
+  delete them from the sidebar. Each keeps its own memory and is auto-named
+  from your first message.
+- 🧠 **Model picker** — ⚡ fast & cheap (Haiku) or 🧠 smartest (Opus).
+- 🖼️ **Image upload (vision)** — attach a picture and ask questions about it.
+- 🎙️ **Voice input** — speak instead of typing (needs `streamlit-mic-recorder`;
+  works best in Chrome).
+- 📄 **Chat with a document** — upload a `.txt` or `.pdf` and ask about it.
+- 🎭 **Personalities** — friendly helper, Python tutor, pirate, quick answers,
+  or write your **own** custom personality.
+- 📏 **Reply-length control**, ⬇️ **download chat**, 🔄 **regenerate** replies,
+  and 👍/👎 **feedback** buttons.
+- 🌊 **Streaming** replies, a logo, a warm theme, and chat avatars.
+- 🔒 **Privacy** — your API key is read from a secure store (never in the code),
+  nothing is saved to disk, and there's an optional password gate.
+- 🛟 **Friendly error handling** — no scary crashes, with a one-tap "Try again".
+
+Put it online (free) with [DEPLOY.md](DEPLOY.md).
+
 ### Common hiccups
 - **`python: command not found`** → use `python3` instead.
 - **`No module named anthropic`** → re-run `pip install -r requirements.txt`
