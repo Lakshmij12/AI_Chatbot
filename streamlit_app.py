@@ -1,9 +1,9 @@
 """
-A web-based chatbot using Streamlit
+A friendly web-based chatbot using Streamlit
 
-Everything so far ran in the terminal. Streamlit turns the same bot into a
-real chat webpage — a text box, chat bubbles, and streaming replies — with
-almost no extra code.
+Streamlit turns our chatbot into a warm, welcoming chat webpage — chat
+bubbles, avatars, streaming replies, example questions to click, and a
+personality picker.
 
 It keeps MEMORY (using Streamlit's session_state), STREAMS the reply so it
 appears word-by-word, and lets you pick a PERSONALITY from the sidebar.
@@ -28,56 +28,90 @@ MODEL = "claude-haiku-4-5"
 
 client = anthropic.Anthropic()
 
+# Avatars shown next to each chat bubble.
+USER_AVATAR = "🧑"
+BOT_AVATAR = "🤖"
+
 # Each personality is just a name mapped to a system prompt. Add your own!
 PERSONALITIES = {
-    "Friendly assistant": "You are a friendly, helpful assistant.",
-    "Python tutor": "You are a patient Python tutor. Explain simply and "
-    "always show a tiny code example.",
-    "Pirate": "You are a cheerful pirate. Answer helpfully but talk like a "
-    "pirate, with 'arr' and nautical slang.",
-    "Concise expert": "You are a terse expert. Answer in as few words as "
-    "possible, no filler.",
+    "😊 Friendly helper": "You are a warm, friendly assistant.",
+    "🐍 Python tutor": "You are a patient, encouraging Python tutor. Explain "
+    "simply and always show a tiny code example.",
+    "🏴‍☠️ Pirate": "You are a cheerful pirate. Answer helpfully but talk like "
+    "a pirate, with 'arr' and nautical slang.",
+    "⚡ Quick answers": "You are a concise assistant. Answer briefly and "
+    "clearly, no filler.",
 }
 
+# We add this to EVERY personality so the bot always feels warm and welcoming.
+FRIENDLY_TOUCH = (
+    " Always be warm, kind, and encouraging. Greet the user, use their name if "
+    "they share it, and keep answers clear and easy to follow. If a question is "
+    "unclear, ask a gentle follow-up rather than guessing."
+)
+
+# --- Page setup ---------------------------------------------------------
+st.set_page_config(page_title="My AI Chatbot", page_icon="💬", layout="centered")
+
 st.title("💬 My AI Chatbot")
+st.caption("Your friendly AI assistant — ask me anything! 🌟")
 
 # --- Sidebar controls ---------------------------------------------------
 with st.sidebar:
-    persona_name = st.selectbox("Personality", list(PERSONALITIES.keys()))
-    if st.button("New chat"):
+    st.header("⚙️ Settings")
+    persona_name = st.selectbox("Choose a personality", list(PERSONALITIES.keys()))
+    if st.button("🗑️ Start a new chat"):
         st.session_state.history = []
         st.rerun()
+    st.caption("💡 Tip: switch the personality any time — the bot's whole "
+               "style changes!")
 
-system_prompt = PERSONALITIES[persona_name]
+system_prompt = PERSONALITIES[persona_name] + FRIENDLY_TOUCH
 
-# session_state is Streamlit's memory — it survives across button clicks and
-# messages. We store the conversation history here.
+# session_state is Streamlit's memory — it survives across clicks and messages.
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Redraw the whole conversation so far (Streamlit reruns the script each time).
+# --- Friendly welcome + example questions (only before the chat starts) --
+if not st.session_state.history:
+    st.info("👋 Hi there! I'm here to help. Tap an example below, or type your "
+            "own message at the bottom.")
+    examples = [
+        "Tell me a fun fact 🎉",
+        "Help me learn Python 🐍",
+        "Give me an idea for today ✨",
+    ]
+    cols = st.columns(len(examples))
+    for col, example in zip(cols, examples):
+        if col.button(example):
+            # Remember the clicked question so we handle it just like typed input.
+            st.session_state.pending = example
+
+# --- Show the conversation so far ---------------------------------------
 for message in st.session_state.history:
-    with st.chat_message(message["role"]):
+    avatar = USER_AVATAR if message["role"] == "user" else BOT_AVATAR
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
-# The chat input box at the bottom of the page.
-prompt = st.chat_input("Type a message...")
+# The message can come from the text box OR from an example button click.
+typed = st.chat_input("Ask me anything…")
+user_input = typed or st.session_state.pop("pending", None)
 
-if prompt:
+if user_input:
     # 1. Show and remember the user's message.
-    st.session_state.history.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.session_state.history.append({"role": "user", "content": user_input})
+    with st.chat_message("user", avatar=USER_AVATAR):
+        st.markdown(user_input)
 
     # 2. Stream Claude's reply into a chat bubble.
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=BOT_AVATAR):
 
         def stream_reply():
             """Yield the reply piece by piece so it types out live."""
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=1024,
-                system=system_prompt,  # the chosen personality
+                system=system_prompt,  # chosen personality + the friendly touch
                 messages=st.session_state.history,
             ) as stream:
                 for text in stream.text_stream:
