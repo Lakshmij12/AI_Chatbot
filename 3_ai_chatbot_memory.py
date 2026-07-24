@@ -18,7 +18,7 @@ import anthropic
 
 client = anthropic.Anthropic()
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 
 def main():

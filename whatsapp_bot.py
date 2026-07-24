@@ -28,7 +28,7 @@ from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 
 client = anthropic.Anthropic()
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 app = Flask(__name__)
 

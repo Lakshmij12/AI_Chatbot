@@ -21,12 +21,12 @@ import anthropic
 
 client = anthropic.Anthropic()
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 # Turn on the built-in web search tool. "max_uses" caps how many searches
 # Claude may run per reply, so it doesn't search endlessly.
 TOOLS = [
-    {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 5}
 ]
 
 

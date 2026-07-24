@@ -22,7 +22,7 @@ import anthropic
 # environment variable. Never paste your key directly into code.
 client = anthropic.Anthropic()
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 
 def ask_claude(message):

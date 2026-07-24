@@ -24,7 +24,7 @@ Your browser opens automatically at http://localhost:8501
 import anthropic
 import streamlit as st
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 client = anthropic.Anthropic()
 
