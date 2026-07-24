@@ -1,46 +1,48 @@
 """
-A polished, private, friendly web chatbot using Streamlit
+An advanced, private, friendly web chatbot using Streamlit
 
-An advanced version of our web app that also solves a real problem:
-"chat with your document". Upload a .txt or .pdf and ask questions about it.
-
-Features:
-  - Chat with MEMORY and word-by-word STREAMING replies
-  - A logo, warm theme, avatars, and clickable example questions
+Feels like Claude / ChatGPT, built on Claude:
+  - MULTIPLE conversations — start new chats, switch between them, delete them
+    (each keeps its own memory; they're auto-named from your first message)
+  - A MODEL picker — fast & cheap (Haiku) or smartest (Opus)
+  - REGENERATE the last reply, or one-tap "Try again" if something errors
+  - Word-by-word STREAMING replies with chat avatars
   - A personality picker (including a custom one you write yourself)
-  - Reply-length control, clear-chat confirmation, download-your-chat
-  - "Chat with your document" — ask questions about a file you upload
-  - Privacy-conscious: reads your API key from a secure store, keeps data only
-    for the current session, and shows a clear privacy notice
+  - Reply-length control and download-your-chat
+  - "Chat with your document" — upload a .txt/.pdf and ask about it
+  - Privacy-conscious: key from a secure store, session-only data, clear notice
+  - Friendly error handling so it never shows a scary crash
 
 Privacy in plain words:
-  - Your messages are sent to Anthropic's API to generate replies. That's how
-    the AI works — but this app itself does NOT save your chats to any file or
-    server. Everything lives in memory for the current browser session and is
-    gone when you refresh or click "Clear chat".
-  - Your API key is read from Streamlit secrets or an environment variable,
-    never written into the code.
+  - Your messages go to Anthropic's API to generate replies. This app itself
+    saves nothing to disk or any server — everything lives in memory for the
+    current session and is gone on refresh.
+  - Your API key is read from Streamlit secrets or an environment variable.
 
 Setup:
     pip install -r requirements.txt
     export ANTHROPIC_API_KEY="your-key-here"     # Windows: setx ANTHROPIC_API_KEY "..."
-    # (or put it in .streamlit/secrets.toml as ANTHROPIC_API_KEY = "...")
 
 Run it (note: 'streamlit run', NOT 'python'):
     streamlit run streamlit_app.py
 """
 
 import os
+import uuid
 
 import anthropic
 import streamlit as st
 from pypdf import PdfReader
 
-MODEL = "claude-haiku-4-5"
-
 # Avatars shown next to each chat bubble.
 USER_AVATAR = "🧑"
 BOT_AVATAR = "🤖"
+
+# Model choices: friendly label -> model id.
+MODELS = {
+    "⚡ Fast & cheap (Haiku)": "claude-haiku-4-5",
+    "🧠 Smartest (Opus)": "claude-opus-4-8",
+}
 
 # Our logo, drawn as an SVG so it always looks crisp. (Also in assets/logo.svg.)
 LOGO_SVG = """
@@ -80,6 +82,16 @@ LENGTHS = {"Short": 300, "Medium": 1024, "Long": 2048}
 MAX_DOC_CHARS = 24000
 
 
+def get_secret(name):
+    """Read a secret from Streamlit secrets, or return None if unavailable."""
+    try:
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return None
+
+
 def get_api_key():
     """Read the API key from Streamlit secrets first, then an env var.
 
@@ -98,16 +110,6 @@ def read_document(uploaded_file):
     return text[:MAX_DOC_CHARS]
 
 
-def get_secret(name):
-    """Read a secret from Streamlit secrets, or return None if unavailable."""
-    try:
-        if name in st.secrets:
-            return st.secrets[name]
-    except Exception:
-        pass
-    return None
-
-
 def require_password():
     """Optional gate: if APP_PASSWORD is set, ask for it before using the app.
 
@@ -116,7 +118,7 @@ def require_password():
     """
     expected = get_secret("APP_PASSWORD")
     if not expected:
-        return  # no password configured → app is open
+        return
     if st.session_state.get("auth_ok"):
         return
     entered = st.text_input("🔒 Enter password to use this app", type="password")
@@ -126,7 +128,21 @@ def require_password():
             st.rerun()
         else:
             st.error("Incorrect password.")
-    st.stop()  # don't render the rest of the app until the password is correct
+    st.stop()
+
+
+# --- Conversation helpers (multiple chats, like Claude/ChatGPT) ----------
+def new_chat():
+    """Create a fresh conversation and make it the current one."""
+    chat_id = str(uuid.uuid4())
+    st.session_state.chats[chat_id] = {"title": "New chat", "history": []}
+    st.session_state.current_chat = chat_id
+    return chat_id
+
+
+def current_history():
+    """The message list for the active conversation."""
+    return st.session_state.chats[st.session_state.current_chat]["history"]
 
 
 # --- Page setup ---------------------------------------------------------
@@ -164,21 +180,55 @@ if not api_key:
         "🔑 No API key found. Set `ANTHROPIC_API_KEY` as an environment variable, "
         "or add it to `.streamlit/secrets.toml`, then reload."
     )
-    # Safe diagnostic: show the NAMES of any secrets the app can see (never the
-    # values). This helps figure out whether the secret reached the app.
-    try:
-        secret_names = list(st.secrets.keys())
-        st.caption(f"🔍 Secrets the app can see: {secret_names or 'none'}")
-    except Exception as diagnostic_error:
-        st.caption(f"🔍 Couldn't read secrets: {diagnostic_error}")
     st.stop()
 client = anthropic.Anthropic(api_key=api_key)
+
+# --- Make sure there's always at least one conversation -----------------
+if "chats" not in st.session_state:
+    st.session_state.chats = {}
+if (
+    "current_chat" not in st.session_state
+    or st.session_state.current_chat not in st.session_state.chats
+):
+    new_chat()
 
 # --- Sidebar controls ---------------------------------------------------
 with st.sidebar:
     st.markdown(f"<div style='text-align:center'>{LOGO_SVG}</div>", unsafe_allow_html=True)
+
+    # --- Conversations list (new / switch / delete) --------------------
+    st.header("💬 Conversations")
+    if st.button("➕ New chat", use_container_width=True):
+        new_chat()
+        st.rerun()
+
+    for chat_id, chat in list(st.session_state.chats.items()):
+        is_active = chat_id == st.session_state.current_chat
+        label = ("🟢 " if is_active else "💬 ") + (chat["title"] or "New chat")
+        if st.button(label, key=f"chat_{chat_id}", use_container_width=True):
+            st.session_state.current_chat = chat_id
+            st.rerun()
+
+    # Delete the active conversation.
+    if st.button("🗑️ Delete this chat", use_container_width=True):
+        del st.session_state.chats[st.session_state.current_chat]
+        if st.session_state.chats:
+            st.session_state.current_chat = next(iter(st.session_state.chats))
+        else:
+            new_chat()
+        st.rerun()
+
+    st.divider()
     st.header("⚙️ Settings")
 
+    # Model picker.
+    model_label = st.selectbox(
+        "Model", list(MODELS.keys()),
+        help="Haiku is fast and very cheap. Opus is the smartest but costs more.",
+    )
+    model = MODELS[model_label]
+
+    # Personality picker (with a custom option).
     persona_name = st.selectbox(
         "Choose a personality", list(PERSONALITIES.keys()) + [CUSTOM_OPTION]
     )
@@ -196,41 +246,29 @@ with st.sidebar:
 
     st.divider()
 
-    # --- Chat with your document (a real, useful feature) ---------------
+    # --- Chat with your document ---------------------------------------
     st.subheader("📄 Chat with a document")
     uploaded = st.file_uploader(
         "Upload a .txt or .pdf, then ask about it", type=["txt", "pdf"]
     )
     if uploaded is not None:
-        st.session_state.doc_text = read_document(uploaded)
-        st.session_state.doc_name = uploaded.name
-        st.success(f"Loaded: {uploaded.name}")
+        try:
+            st.session_state.doc_text = read_document(uploaded)
+            st.session_state.doc_name = uploaded.name
+            st.success(f"Loaded: {uploaded.name}")
+        except Exception:
+            st.session_state.pop("doc_text", None)
+            st.session_state.pop("doc_name", None)
+            st.error("Couldn't read that file. Try a different .txt or .pdf.")
     else:
-        # File removed → forget its contents.
         st.session_state.pop("doc_text", None)
         st.session_state.pop("doc_name", None)
 
-    st.divider()
-
-    # Clear chat — with a confirmation so it's not accidental.
-    if st.button("🗑️ Clear chat"):
-        st.session_state.confirm_clear = True
-    if st.session_state.get("confirm_clear"):
-        st.warning("Clear the whole conversation?")
-        yes, no = st.columns(2)
-        if yes.button("Yes, clear"):
-            st.session_state.history = []
-            st.session_state.confirm_clear = False
-            st.rerun()
-        if no.button("Cancel"):
-            st.session_state.confirm_clear = False
-            st.rerun()
-
-    # Download the conversation as a text file (only when the user clicks).
-    if st.session_state.get("history"):
+    # Download the current conversation as a text file.
+    if current_history():
         transcript = "\n\n".join(
             f"{'You' if m['role'] == 'user' else 'Bot'}: {m['content']}"
-            for m in st.session_state.history
+            for m in current_history()
         )
         st.download_button("⬇️ Download chat", transcript, file_name="my_chat.txt")
 
@@ -243,7 +281,7 @@ with st.sidebar:
             "replies — that's how the AI works.\n"
             "- This app does **not** save your chats or documents to any file "
             "or server. They stay in memory for this session only and are "
-            "erased when you refresh or click **Clear chat**.\n"
+            "erased when you refresh.\n"
             "- Your API key is read from a secure store, never stored in the "
             "code.\n"
             "- Please avoid sharing passwords or other sensitive personal "
@@ -262,16 +300,55 @@ if st.session_state.get("doc_text"):
         + "\n--- DOCUMENT END ---"
     )
 
-# session_state is Streamlit's memory — it survives across clicks and messages.
-if "history" not in st.session_state:
-    st.session_state.history = []
+
+def generate_reply():
+    """Stream a reply for the active conversation. Returns True on success.
+
+    On any API problem we show a friendly message instead of a scary error,
+    and leave the user's message in place so they can tap "Try again".
+    """
+    history = current_history()
+    try:
+        with st.chat_message("assistant", avatar=BOT_AVATAR):
+
+            def stream_reply():
+                with client.messages.stream(
+                    model=model,
+                    max_tokens=LENGTHS[length],
+                    system=system_prompt,
+                    messages=history,
+                ) as stream:
+                    for text in stream.text_stream:
+                        yield text
+
+            reply = st.write_stream(stream_reply)
+
+        reply = reply or "🤔 I didn't quite catch that — could you rephrase?"
+        history.append({"role": "assistant", "content": reply})
+        return True
+    except anthropic.RateLimitError:
+        st.warning("😅 Lots of requests right now. Wait a few seconds, then tap "
+                   "**🔄 Try again**.")
+    except anthropic.AuthenticationError:
+        st.error("🔑 There's a problem with the API key. Check it in the app "
+                 "settings.")
+    except anthropic.APIConnectionError:
+        st.warning("🌐 Network hiccup. Check your connection, then tap "
+                   "**🔄 Try again**.")
+    except anthropic.APIStatusError:
+        st.warning("⏳ The AI service is busy. Please tap **🔄 Try again** in a "
+                   "moment.")
+    except Exception:
+        st.error("😕 Something went wrong. Please tap **🔄 Try again**.")
+    return False
+
 
 # Show which document is active, if any.
 if st.session_state.get("doc_name"):
     st.caption(f"📄 Answering from your document: **{st.session_state['doc_name']}**")
 
 # --- Friendly welcome + example questions (only before the chat starts) --
-if not st.session_state.history:
+if not current_history():
     st.info("👋 Hi there! I'm here to help. Tap an example below, upload a "
             "document in the sidebar, or just type a message.")
     examples = [
@@ -285,7 +362,7 @@ if not st.session_state.history:
             st.session_state.pending = example
 
 # --- Show the conversation so far ---------------------------------------
-for message in st.session_state.history:
+for message in current_history():
     avatar = USER_AVATAR if message["role"] == "user" else BOT_AVATAR
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
@@ -295,23 +372,28 @@ typed = st.chat_input("Ask me anything…")
 user_input = typed or st.session_state.pop("pending", None)
 
 if user_input:
-    st.session_state.history.append({"role": "user", "content": user_input})
+    history = current_history()
+    history.append({"role": "user", "content": user_input})
+
+    # Auto-name a brand-new conversation from the first message.
+    chat = st.session_state.chats[st.session_state.current_chat]
+    if chat["title"] == "New chat":
+        chat["title"] = user_input[:38] + ("…" if len(user_input) > 38 else "")
+
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(user_input)
+    generate_reply()
 
-    with st.chat_message("assistant", avatar=BOT_AVATAR):
-
-        def stream_reply():
-            """Yield the reply piece by piece so it types out live."""
-            with client.messages.stream(
-                model=MODEL,
-                max_tokens=LENGTHS[length],
-                system=system_prompt,
-                messages=st.session_state.history,
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
-
-        reply = st.write_stream(stream_reply)
-
-    st.session_state.history.append({"role": "assistant", "content": reply})
+# --- Action buttons under the conversation ------------------------------
+history = current_history()
+if history and history[-1]["role"] == "assistant" and len(history) >= 2:
+    # Normal completed turn → offer to regenerate the last answer.
+    if st.button("🔄 Regenerate"):
+        history.pop()  # drop the last assistant reply and make a new one
+        if generate_reply():
+            st.rerun()
+elif history and history[-1]["role"] == "user":
+    # Last turn didn't get an answer (e.g. an error) → offer a retry.
+    if st.button("🔄 Try again"):
+        if generate_reply():
+            st.rerun()
