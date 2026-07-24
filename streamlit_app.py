@@ -164,6 +164,13 @@ if not api_key:
         "🔑 No API key found. Set `ANTHROPIC_API_KEY` as an environment variable, "
         "or add it to `.streamlit/secrets.toml`, then reload."
     )
+    # Safe diagnostic: show the NAMES of any secrets the app can see (never the
+    # values). This helps figure out whether the secret reached the app.
+    try:
+        secret_names = list(st.secrets.keys())
+        st.caption(f"🔍 Secrets the app can see: {secret_names or 'none'}")
+    except Exception as diagnostic_error:
+        st.caption(f"🔍 Couldn't read secrets: {diagnostic_error}")
     st.stop()
 client = anthropic.Anthropic(api_key=api_key)
 
