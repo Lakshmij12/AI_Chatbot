@@ -1,0 +1,9 @@
+# Streamlit theme — a warm, friendly look for the chatbot.
+# Streamlit reads this automatically when you run `streamlit run streamlit_app.py`.
+# Change the colors to make the app your own!
+[theme]
+primaryColor = "#FF7A59"           # accent (buttons, highlights) — warm coral
+backgroundColor = "#FFF8F2"        # main background — soft cream
+secondaryBackgroundColor = "#FFECE0"  # sidebar / chat bubbles — light peach
+textColor = "#2B2B2B"              # easy-to-read dark grey
+font = "sans serif"
