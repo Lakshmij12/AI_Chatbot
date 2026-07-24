@@ -1,0 +1,9 @@
+# Keep secrets and local junk out of GitHub
+.streamlit/secrets.toml
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

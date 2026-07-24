@@ -18,6 +18,8 @@ does math, searches the web, and answers instantly.
 | `streamlit_app.py` | A **web app** version — a real chat page in your browser | Yes |
 | `whatsapp_bot.py` | A **WhatsApp** version — chat with the bot from WhatsApp (see [WHATSAPP.md](WHATSAPP.md)) | Yes |
 
+> 🌐 **Want to put the web app online?** See [DEPLOY.md](DEPLOY.md) — deploy it free to Streamlit Community Cloud, with your API key kept private and an optional password to protect your credits.
+
 Work through the numbered files in order — each one builds on the idea before
 it. `streamlit_app.py` is a bonus: the chatbot as a web page instead of the
 terminal.

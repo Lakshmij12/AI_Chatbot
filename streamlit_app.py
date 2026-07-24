@@ -85,12 +85,7 @@ def get_api_key():
 
     Keeping the key out of the code is the core privacy/security practice.
     """
-    try:
-        if "ANTHROPIC_API_KEY" in st.secrets:
-            return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        pass  # no secrets file — fall back to the environment variable
-    return os.environ.get("ANTHROPIC_API_KEY")
+    return get_secret("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
 
 def read_document(uploaded_file):
@@ -101,6 +96,37 @@ def read_document(uploaded_file):
     else:
         text = uploaded_file.read().decode("utf-8", errors="ignore")
     return text[:MAX_DOC_CHARS]
+
+
+def get_secret(name):
+    """Read a secret from Streamlit secrets, or return None if unavailable."""
+    try:
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+    return None
+
+
+def require_password():
+    """Optional gate: if APP_PASSWORD is set, ask for it before using the app.
+
+    This protects a PUBLIC deployment so strangers can't spend your API credits.
+    If no APP_PASSWORD is configured, the app stays open (handy for local use).
+    """
+    expected = get_secret("APP_PASSWORD")
+    if not expected:
+        return  # no password configured → app is open
+    if st.session_state.get("auth_ok"):
+        return
+    entered = st.text_input("🔒 Enter password to use this app", type="password")
+    if entered:
+        if entered == expected:
+            st.session_state.auth_ok = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    st.stop()  # don't render the rest of the app until the password is correct
 
 
 # --- Page setup ---------------------------------------------------------
@@ -127,6 +153,9 @@ st.markdown(
     "ask me anything! 🌟</p>",
     unsafe_allow_html=True,
 )
+
+# --- Optional password gate (protects a public deployment) --------------
+require_password()
 
 # --- API key check (fail kindly if it's missing) ------------------------
 api_key = get_api_key()
