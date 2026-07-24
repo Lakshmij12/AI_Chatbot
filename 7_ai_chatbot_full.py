@@ -26,7 +26,7 @@ import anthropic
 
 client = anthropic.Anthropic()
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"
 
 
 # --- The calculator tool (same safe evaluator as step 4) ----------------
@@ -73,7 +73,7 @@ TOOLS = [
             "required": ["expression"],
         },
     },
-    {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 5},
 ]
 
 SYSTEM = (
