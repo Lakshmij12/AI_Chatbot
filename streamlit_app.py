@@ -1,15 +1,14 @@
 """
-A friendly web-based chatbot using Streamlit
+A polished, friendly web chatbot using Streamlit
 
-Streamlit turns our chatbot into a warm, welcoming chat webpage — chat
-bubbles, avatars, streaming replies, example questions to click, and a
-personality picker.
+A more advanced version of our web app: a logo, a welcoming header, chat
+avatars, streaming replies, clickable example questions, a personality picker
+(including a custom one you write yourself), a reply-length control, a
+clear-chat confirmation, and a download-your-chat button.
 
-It keeps MEMORY (using Streamlit's session_state), STREAMS the reply so it
-appears word-by-word, and lets you pick a PERSONALITY from the sidebar.
-
-The personality is just a different "system prompt" — the instruction that
-tells Claude how to behave. Swapping it changes the bot's whole character.
+It keeps MEMORY (Streamlit's session_state) and STREAMS replies word-by-word.
+The "personality" is just a system prompt — the instruction that tells Claude
+how to behave.
 
 Setup:
     pip install -r requirements.txt
@@ -32,6 +31,21 @@ client = anthropic.Anthropic()
 USER_AVATAR = "🧑"
 BOT_AVATAR = "🤖"
 
+# Our logo, drawn as an SVG so it always looks crisp. (Also saved in assets/logo.svg.)
+LOGO_SVG = """
+<svg width="72" height="72" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <line x1="48" y1="18" x2="48" y2="9" stroke="#FF7A59" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="48" cy="6" r="4" fill="#FFC15E"/>
+  <rect x="14" y="18" width="68" height="52" rx="16" fill="#FF7A59"/>
+  <path d="M34 66 L34 84 L52 66 Z" fill="#FF7A59"/>
+  <circle cx="36" cy="41" r="7" fill="#FFF8F2"/>
+  <circle cx="60" cy="41" r="7" fill="#FFF8F2"/>
+  <circle cx="36" cy="42" r="3" fill="#2B2B2B"/>
+  <circle cx="60" cy="42" r="3" fill="#2B2B2B"/>
+  <path d="M36 53 Q48 61 60 53" stroke="#FFF8F2" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>
+"""
+
 # Each personality is just a name mapped to a system prompt. Add your own!
 PERSONALITIES = {
     "😊 Friendly helper": "You are a warm, friendly assistant.",
@@ -42,31 +56,94 @@ PERSONALITIES = {
     "⚡ Quick answers": "You are a concise assistant. Answer briefly and "
     "clearly, no filler.",
 }
+CUSTOM_OPTION = "✏️ Custom (write your own)"
 
-# We add this to EVERY personality so the bot always feels warm and welcoming.
+# Added to EVERY personality so the bot always feels warm and welcoming.
 FRIENDLY_TOUCH = (
     " Always be warm, kind, and encouraging. Greet the user, use their name if "
     "they share it, and keep answers clear and easy to follow. If a question is "
     "unclear, ask a gentle follow-up rather than guessing."
 )
 
+# Reply-length choices map to how many tokens Claude may use.
+LENGTHS = {"Short": 300, "Medium": 1024, "Long": 2048}
+
 # --- Page setup ---------------------------------------------------------
 st.set_page_config(page_title="My AI Chatbot", page_icon="💬", layout="centered")
 
-st.title("💬 My AI Chatbot")
-st.caption("Your friendly AI assistant — ask me anything! 🌟")
+# A little CSS polish: rounded buttons and inputs.
+st.markdown(
+    """
+    <style>
+      .stButton > button { border-radius: 20px; font-weight: 600; }
+      .stChatInput textarea { border-radius: 16px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Header: logo + title, centered.
+st.markdown(f"<div style='text-align:center'>{LOGO_SVG}</div>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 style='text-align:center; margin-top:0'>My AI Chatbot</h1>",
+    unsafe_allow_html=True,
+)
+st.markdown(
+    "<p style='text-align:center; color:#a05a3f'>Your friendly AI assistant — "
+    "ask me anything! 🌟</p>",
+    unsafe_allow_html=True,
+)
 
 # --- Sidebar controls ---------------------------------------------------
 with st.sidebar:
+    st.markdown(f"<div style='text-align:center'>{LOGO_SVG}</div>", unsafe_allow_html=True)
     st.header("⚙️ Settings")
-    persona_name = st.selectbox("Choose a personality", list(PERSONALITIES.keys()))
-    if st.button("🗑️ Start a new chat"):
-        st.session_state.history = []
-        st.rerun()
-    st.caption("💡 Tip: switch the personality any time — the bot's whole "
-               "style changes!")
 
-system_prompt = PERSONALITIES[persona_name] + FRIENDLY_TOUCH
+    persona_name = st.selectbox(
+        "Choose a personality", list(PERSONALITIES.keys()) + [CUSTOM_OPTION]
+    )
+    if persona_name == CUSTOM_OPTION:
+        base_prompt = st.text_area(
+            "Describe your bot's personality",
+            "You are a helpful, friendly assistant.",
+        )
+    else:
+        base_prompt = PERSONALITIES[persona_name]
+
+    length = st.select_slider(
+        "Reply length", options=list(LENGTHS.keys()), value="Medium"
+    )
+
+    st.divider()
+
+    # Clear chat — with a confirmation so it's not accidental.
+    if st.button("🗑️ Clear chat"):
+        st.session_state.confirm_clear = True
+    if st.session_state.get("confirm_clear"):
+        st.warning("Clear the whole conversation?")
+        yes, no = st.columns(2)
+        if yes.button("Yes, clear"):
+            st.session_state.history = []
+            st.session_state.confirm_clear = False
+            st.rerun()
+        if no.button("Cancel"):
+            st.session_state.confirm_clear = False
+            st.rerun()
+
+    # Download the conversation as a text file.
+    if st.session_state.get("history"):
+        transcript = "\n\n".join(
+            f"{'You' if m['role'] == 'user' else 'Bot'}: {m['content']}"
+            for m in st.session_state.history
+        )
+        st.download_button("⬇️ Download chat", transcript, file_name="my_chat.txt")
+
+    st.divider()
+    st.caption("💡 Tip: pick a personality — or write your own — and set how "
+               "long replies should be.")
+
+system_prompt = base_prompt + FRIENDLY_TOUCH
+max_tokens = LENGTHS[length]
 
 # session_state is Streamlit's memory — it survives across clicks and messages.
 if "history" not in st.session_state:
@@ -84,7 +161,7 @@ if not st.session_state.history:
     cols = st.columns(len(examples))
     for col, example in zip(cols, examples):
         if col.button(example):
-            # Remember the clicked question so we handle it just like typed input.
+            # Remember the clicked question so we handle it like typed input.
             st.session_state.pending = example
 
 # --- Show the conversation so far ---------------------------------------
@@ -110,7 +187,7 @@ if user_input:
             """Yield the reply piece by piece so it types out live."""
             with client.messages.stream(
                 model=MODEL,
-                max_tokens=1024,
+                max_tokens=max_tokens,
                 system=system_prompt,  # chosen personality + the friendly touch
                 messages=st.session_state.history,
             ) as stream:
