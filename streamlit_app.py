@@ -1,37 +1,48 @@
 """
-A polished, friendly web chatbot using Streamlit
+A polished, private, friendly web chatbot using Streamlit
 
-A more advanced version of our web app: a logo, a welcoming header, chat
-avatars, streaming replies, clickable example questions, a personality picker
-(including a custom one you write yourself), a reply-length control, a
-clear-chat confirmation, and a download-your-chat button.
+An advanced version of our web app that also solves a real problem:
+"chat with your document". Upload a .txt or .pdf and ask questions about it.
 
-It keeps MEMORY (Streamlit's session_state) and STREAMS replies word-by-word.
-The "personality" is just a system prompt — the instruction that tells Claude
-how to behave.
+Features:
+  - Chat with MEMORY and word-by-word STREAMING replies
+  - A logo, warm theme, avatars, and clickable example questions
+  - A personality picker (including a custom one you write yourself)
+  - Reply-length control, clear-chat confirmation, download-your-chat
+  - "Chat with your document" — ask questions about a file you upload
+  - Privacy-conscious: reads your API key from a secure store, keeps data only
+    for the current session, and shows a clear privacy notice
+
+Privacy in plain words:
+  - Your messages are sent to Anthropic's API to generate replies. That's how
+    the AI works — but this app itself does NOT save your chats to any file or
+    server. Everything lives in memory for the current browser session and is
+    gone when you refresh or click "Clear chat".
+  - Your API key is read from Streamlit secrets or an environment variable,
+    never written into the code.
 
 Setup:
     pip install -r requirements.txt
     export ANTHROPIC_API_KEY="your-key-here"     # Windows: setx ANTHROPIC_API_KEY "..."
+    # (or put it in .streamlit/secrets.toml as ANTHROPIC_API_KEY = "...")
 
 Run it (note: 'streamlit run', NOT 'python'):
     streamlit run streamlit_app.py
-
-Your browser opens automatically at http://localhost:8501
 """
+
+import os
 
 import anthropic
 import streamlit as st
+from pypdf import PdfReader
 
 MODEL = "claude-haiku-4-5"
-
-client = anthropic.Anthropic()
 
 # Avatars shown next to each chat bubble.
 USER_AVATAR = "🧑"
 BOT_AVATAR = "🤖"
 
-# Our logo, drawn as an SVG so it always looks crisp. (Also saved in assets/logo.svg.)
+# Our logo, drawn as an SVG so it always looks crisp. (Also in assets/logo.svg.)
 LOGO_SVG = """
 <svg width="72" height="72" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
   <line x1="48" y1="18" x2="48" y2="9" stroke="#FF7A59" stroke-width="4" stroke-linecap="round"/>
@@ -46,7 +57,6 @@ LOGO_SVG = """
 </svg>
 """
 
-# Each personality is just a name mapped to a system prompt. Add your own!
 PERSONALITIES = {
     "😊 Friendly helper": "You are a warm, friendly assistant.",
     "🐍 Python tutor": "You are a patient, encouraging Python tutor. Explain "
@@ -58,20 +68,44 @@ PERSONALITIES = {
 }
 CUSTOM_OPTION = "✏️ Custom (write your own)"
 
-# Added to EVERY personality so the bot always feels warm and welcoming.
 FRIENDLY_TOUCH = (
     " Always be warm, kind, and encouraging. Greet the user, use their name if "
     "they share it, and keep answers clear and easy to follow. If a question is "
     "unclear, ask a gentle follow-up rather than guessing."
 )
 
-# Reply-length choices map to how many tokens Claude may use.
 LENGTHS = {"Short": 300, "Medium": 1024, "Long": 2048}
+
+# How much of an uploaded document we include (keeps requests fast and cheap).
+MAX_DOC_CHARS = 24000
+
+
+def get_api_key():
+    """Read the API key from Streamlit secrets first, then an env var.
+
+    Keeping the key out of the code is the core privacy/security practice.
+    """
+    try:
+        if "ANTHROPIC_API_KEY" in st.secrets:
+            return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass  # no secrets file — fall back to the environment variable
+    return os.environ.get("ANTHROPIC_API_KEY")
+
+
+def read_document(uploaded_file):
+    """Extract text from an uploaded .txt or .pdf file (kept in memory only)."""
+    if uploaded_file.name.lower().endswith(".pdf"):
+        reader = PdfReader(uploaded_file)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    else:
+        text = uploaded_file.read().decode("utf-8", errors="ignore")
+    return text[:MAX_DOC_CHARS]
+
 
 # --- Page setup ---------------------------------------------------------
 st.set_page_config(page_title="My AI Chatbot", page_icon="💬", layout="centered")
 
-# A little CSS polish: rounded buttons and inputs.
 st.markdown(
     """
     <style>
@@ -93,6 +127,16 @@ st.markdown(
     "ask me anything! 🌟</p>",
     unsafe_allow_html=True,
 )
+
+# --- API key check (fail kindly if it's missing) ------------------------
+api_key = get_api_key()
+if not api_key:
+    st.error(
+        "🔑 No API key found. Set `ANTHROPIC_API_KEY` as an environment variable, "
+        "or add it to `.streamlit/secrets.toml`, then reload."
+    )
+    st.stop()
+client = anthropic.Anthropic(api_key=api_key)
 
 # --- Sidebar controls ---------------------------------------------------
 with st.sidebar:
@@ -116,6 +160,22 @@ with st.sidebar:
 
     st.divider()
 
+    # --- Chat with your document (a real, useful feature) ---------------
+    st.subheader("📄 Chat with a document")
+    uploaded = st.file_uploader(
+        "Upload a .txt or .pdf, then ask about it", type=["txt", "pdf"]
+    )
+    if uploaded is not None:
+        st.session_state.doc_text = read_document(uploaded)
+        st.session_state.doc_name = uploaded.name
+        st.success(f"Loaded: {uploaded.name}")
+    else:
+        # File removed → forget its contents.
+        st.session_state.pop("doc_text", None)
+        st.session_state.pop("doc_name", None)
+
+    st.divider()
+
     # Clear chat — with a confirmation so it's not accidental.
     if st.button("🗑️ Clear chat"):
         st.session_state.confirm_clear = True
@@ -130,7 +190,7 @@ with st.sidebar:
             st.session_state.confirm_clear = False
             st.rerun()
 
-    # Download the conversation as a text file.
+    # Download the conversation as a text file (only when the user clicks).
     if st.session_state.get("history"):
         transcript = "\n\n".join(
             f"{'You' if m['role'] == 'user' else 'Bot'}: {m['content']}"
@@ -139,20 +199,45 @@ with st.sidebar:
         st.download_button("⬇️ Download chat", transcript, file_name="my_chat.txt")
 
     st.divider()
-    st.caption("💡 Tip: pick a personality — or write your own — and set how "
-               "long replies should be.")
 
+    # --- Privacy notice ------------------------------------------------
+    with st.expander("🔒 Privacy"):
+        st.markdown(
+            "- Your messages are sent to **Anthropic's API** to generate "
+            "replies — that's how the AI works.\n"
+            "- This app does **not** save your chats or documents to any file "
+            "or server. They stay in memory for this session only and are "
+            "erased when you refresh or click **Clear chat**.\n"
+            "- Your API key is read from a secure store, never stored in the "
+            "code.\n"
+            "- Please avoid sharing passwords or other sensitive personal "
+            "information in chat."
+        )
+
+# Build the system prompt: personality + friendliness (+ document if provided).
 system_prompt = base_prompt + FRIENDLY_TOUCH
-max_tokens = LENGTHS[length]
+if st.session_state.get("doc_text"):
+    system_prompt += (
+        f"\n\nThe user has shared a document titled "
+        f"'{st.session_state['doc_name']}'. Use it to answer their questions "
+        "when relevant, and say clearly when the answer isn't in the document."
+        "\n\n--- DOCUMENT START ---\n"
+        + st.session_state["doc_text"]
+        + "\n--- DOCUMENT END ---"
+    )
 
 # session_state is Streamlit's memory — it survives across clicks and messages.
 if "history" not in st.session_state:
     st.session_state.history = []
 
+# Show which document is active, if any.
+if st.session_state.get("doc_name"):
+    st.caption(f"📄 Answering from your document: **{st.session_state['doc_name']}**")
+
 # --- Friendly welcome + example questions (only before the chat starts) --
 if not st.session_state.history:
-    st.info("👋 Hi there! I'm here to help. Tap an example below, or type your "
-            "own message at the bottom.")
+    st.info("👋 Hi there! I'm here to help. Tap an example below, upload a "
+            "document in the sidebar, or just type a message.")
     examples = [
         "Tell me a fun fact 🎉",
         "Help me learn Python 🐍",
@@ -161,7 +246,6 @@ if not st.session_state.history:
     cols = st.columns(len(examples))
     for col, example in zip(cols, examples):
         if col.button(example):
-            # Remember the clicked question so we handle it like typed input.
             st.session_state.pending = example
 
 # --- Show the conversation so far ---------------------------------------
@@ -175,28 +259,23 @@ typed = st.chat_input("Ask me anything…")
 user_input = typed or st.session_state.pop("pending", None)
 
 if user_input:
-    # 1. Show and remember the user's message.
     st.session_state.history.append({"role": "user", "content": user_input})
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(user_input)
 
-    # 2. Stream Claude's reply into a chat bubble.
     with st.chat_message("assistant", avatar=BOT_AVATAR):
 
         def stream_reply():
             """Yield the reply piece by piece so it types out live."""
             with client.messages.stream(
                 model=MODEL,
-                max_tokens=max_tokens,
-                system=system_prompt,  # chosen personality + the friendly touch
+                max_tokens=LENGTHS[length],
+                system=system_prompt,
                 messages=st.session_state.history,
             ) as stream:
                 for text in stream.text_stream:
                     yield text
 
-        # st.write_stream prints each piece as it arrives AND returns the
-        # full text once done, so we can save it to memory.
         reply = st.write_stream(stream_reply)
 
-    # 3. Remember the bot's reply for the next turn.
     st.session_state.history.append({"role": "assistant", "content": reply})
